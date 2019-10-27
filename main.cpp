@@ -35,7 +35,7 @@ Ptr<Tracker> createTrackerByName(const string &trackerType)
     else {
         cout << "Incorrect tracker name" << endl;
         cout << "Available trackers are: " << endl;
-        for (vector<string>::iterator it = trackerTypes.begin() ; it != trackerTypes.end(); ++it)
+        for (auto it = trackerTypes.begin() ; it != trackerTypes.end(); ++it)
             std::cout << " " << *it << endl;
     }
     return tracker;
@@ -83,7 +83,7 @@ int main() {
     cv::selectROIs("MultiTracker", frame, bboxes, showCrosshair, fromCenter);
 
     // quit if there are no objects to track
-    if(bboxes.size() < 1)
+    if(bboxes.empty())
         return 0;
 
     vector<Scalar> colors;
@@ -96,8 +96,8 @@ int main() {
     Ptr<MultiTracker> multiTracker = cv::MultiTracker::create();
 
     // Initialize multitracker
-    for(int i=0; i < bboxes.size(); i++)
-        multiTracker->add(createTrackerByName(trackerType), frame, Rect2d(bboxes[i]));
+    for (auto &bboxe : bboxes)
+        multiTracker->add(createTrackerByName(trackerType), frame, Rect2d(bboxe));
 
     while(cap.isOpened())
     {
