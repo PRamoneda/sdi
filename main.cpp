@@ -1,126 +1,128 @@
-// This file is part of OpenCV project.
-// It is subject to the license terms in the LICENSE file found in the top-level directory
-// of this distribution and at http://opencv.org/license.html
+// Made by Pedro Ramoneda. 27/10/19
 
-#include <opencv2/objdetect.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
 #include <iostream>
-#include <iomanip>
+
+
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/tracking.hpp>
 
 using namespace cv;
 using namespace std;
 
-class Detector
+vector<string> trackerTypes = {"BOOSTING", "MIL", "KCF", "TLD", "MEDIANFLOW", "GOTURN", "MOSSE", "CSRT"};
+
+// create tracker by name
+Ptr<Tracker> createTrackerByName(const string &trackerType)
 {
-    enum Mode { Default, Daimler } m;
-    HOGDescriptor hog, hog_d;
-public:
-    Detector() : m(Default), hog(), hog_d(Size(48, 96), Size(16, 16), Size(8, 8), Size(8, 8), 9)
-    {
-        hog.setSVMDetector(HOGDescriptor::getDefaultPeopleDetector());
-        hog_d.setSVMDetector(HOGDescriptor::getDaimlerPeopleDetector());
+    Ptr<Tracker> tracker;
+    if (trackerType ==  trackerTypes[0])
+        tracker = TrackerBoosting::create();
+    else if (trackerType == trackerTypes[1])
+        tracker = TrackerMIL::create();
+    else if (trackerType == trackerTypes[2])
+        tracker = TrackerKCF::create();
+    else if (trackerType == trackerTypes[3])
+        tracker = TrackerTLD::create();
+    else if (trackerType == trackerTypes[4])
+        tracker = TrackerMedianFlow::create();
+    else if (trackerType == trackerTypes[5])
+        tracker = TrackerGOTURN::create();
+    else if (trackerType == trackerTypes[6])
+        tracker = TrackerMOSSE::create();
+    else if (trackerType == trackerTypes[7])
+        tracker = TrackerCSRT::create();
+    else {
+        cout << "Incorrect tracker name" << endl;
+        cout << "Available trackers are: " << endl;
+        for (auto it = trackerTypes.begin() ; it != trackerTypes.end(); ++it)
+            std::cout << " " << *it << endl;
     }
-    void toggleMode() { m = (m == Default ? Daimler : Default); }
-    string modeName() const { return (m == Default ? "Default" : "Daimler"); }
-    vector<Rect> detect(InputArray img)
-    {
-        // Run the detector with default parameters. to get a higher hit-rate
-        // (and more false alarms, respectively), decrease the hitThreshold and
-        // groupThreshold (set groupThreshold to 0 to turn off the grouping completely).
-        vector<Rect> found;
-        if (m == Default)
-            hog.detectMultiScale(img, found, 0, Size(8,8), Size(), 1.05, 2, false);
-        else if (m == Daimler)
-            hog_d.detectMultiScale(img, found, 0, Size(8,8), Size(), 1.05, 2, true);
-        return found;
-    }
-    void adjustRect(Rect & r) const
-    {
-        // The HOG detector returns slightly larger rectangles than the real objects,
-        // so we slightly shrink the rectangles to get a nicer output.
-        r.x += cvRound(r.width*0.1);
-        r.width = cvRound(r.width*0.8);
-        r.y += cvRound(r.height*0.07);
-        r.height = cvRound(r.height*0.8);
-    }
-};
+    return tracker;
+}
 
-static const string keys = "{ help h   |   | print help message }"
-                           "{ camera c | 0 | capture video from camera (device index starting from 0) }"
-                           "{ video v  |   | use video as input }";
-
-int main(int argc, char** argv)
+// Fill the vector with random colors
+void getRandomColors(vector<Scalar>& colors, int numColors)
 {
-    CommandLineParser parser(argc, argv, keys);
-    parser.about("This sample demonstrates the use of the HoG descriptor.");
-    if (parser.has("help"))
-    {
-        parser.printMessage();
-        return 0;
-    }
-    int camera = parser.get<int>("camera");
-    string file = parser.get<string>("video");
+    RNG rng(0);
+    for(int i=0; i < numColors; i++)
+        colors.push_back(Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255)));
+}
 
-    VideoCapture cap;
-    if (file.empty()){
-        file = samples::findFileOrKeep("test.mp4");
-        cap.open(file);
-    }
-    else
-    {
-        file = samples::findFileOrKeep(file);
-        cap.open(file);
-    }
-    if (!cap.isOpened())
-    {
-        cout << "Can not open video stream: '" << (file.empty() ? "<camera>" : file) << "'" << endl;
-        return 2;
-    }
+int main() {
 
-    cout << "Press 'q' or <ESC> to quit." << endl;
-    cout << "Press <space> to toggle between Default and Daimler detector" << endl;
-    Detector detector;
+    // set default values for tracking algorithm and video
+    string videoPath = "./test.mp4";
+
+    // Initialize MultiTracker with tracking algo
+    vector<Rect> bboxes;
+
+    // create a video capture object to read videos
+    cv::VideoCapture cap(videoPath);
     Mat frame;
-    for (;;)
+
+    // quit if unabke to read video file
+    if(!cap.isOpened())
     {
-        cap >> frame;
-        if (frame.empty())
-        {
-            cout << "Finished reading: empty frame" << endl;
-            break;
-        }
-        int64 t = getTickCount();
-        vector<Rect> found = detector.detect(frame);
-        t = getTickCount() - t;
-
-        // show the window
-        {
-            ostringstream buf;
-            buf << "Mode: " << detector.modeName() << " ||| "
-                << "FPS: " << fixed << setprecision(1) << (getTickFrequency() / (double)t);
-            putText(frame, buf.str(), Point(10, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 0, 255), 2, LINE_AA);
-        }
-        for (vector<Rect>::iterator i = found.begin(); i != found.end(); ++i)
-        {
-            Rect &r = *i;
-            detector.adjustRect(r);
-            rectangle(frame, r.tl(), r.br(), cv::Scalar(0, 255, 0), 2);
-        }
-        imshow("People detector", frame);
-
-        // interact with user
-        const char key = (char)waitKey(1);
-        if (key == 27 || key == 'q') // ESC
-        {
-            cout << "Exit requested" << endl;
-            break;
-        }
-        else if (key == ' ')
-        {
-            detector.toggleMode();
-        }
+        cout << "Error opening video file " << videoPath << endl;
+        return -1;
     }
-    return 0;
+
+    // read first frame
+    cap >> frame;
+
+    // Get bounding boxes for first frame
+    // selectROI's default behaviour is to draw box starting from the center
+    // when fromCenter is set to false, you can draw box starting from top left corner
+    bool showCrosshair = true;
+    bool fromCenter = false;
+    cout << "\n==========================================================\n";
+    cout << "OpenCV says press c to cancel objects selection process" << endl;
+    cout << "It doesn't work. Press Escape to exit selection process" << endl;
+    cout << "\n==========================================================\n";
+    cv::selectROIs("MultiTracker", frame, bboxes, showCrosshair, fromCenter);
+
+    // quit if there are no objects to track
+    if(bboxes.empty())
+        return 0;
+
+    vector<Scalar> colors;
+    getRandomColors(colors, static_cast<int>(bboxes.size()));
+
+
+    // Specify the tracker type
+    string trackerType = "CSRT";
+    // Create multitracker
+    Ptr<MultiTracker> multiTracker = cv::MultiTracker::create();
+
+    // Initialize multitracker
+    for (auto &bboxe : bboxes)
+        multiTracker->add(createTrackerByName(trackerType), frame, Rect2d(bboxe));
+
+    while(cap.isOpened())
+    {
+        // get frame from the video
+        cap >> frame;
+
+        // Stop the program if reached end of video
+        if (frame.empty()) break;
+
+        //Update the tracking result with new frame
+        multiTracker->update(frame);
+
+        // Draw tracked objects
+        for(unsigned i=0; i<multiTracker->getObjects().size(); i++)
+        {
+            rectangle(frame, multiTracker->getObjects()[i], colors[i], 2, 1);
+        }
+
+        // Show frame
+        imshow("MultiTracker", frame);
+
+        // quit on x button
+        if  (waitKey(1) == 27) break;
+
+    }
+
+
 }
