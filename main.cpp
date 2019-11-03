@@ -1,128 +1,108 @@
-// Made by Pedro Ramoneda. 27/10/19
-
 #include <iostream>
-
-
-
-#include <opencv2/opencv.hpp>
-#include <opencv2/tracking.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/video.hpp>
 
 using namespace cv;
 using namespace std;
 
-vector<string> trackerTypes = {"BOOSTING", "MIL", "KCF", "TLD", "MEDIANFLOW", "GOTURN", "MOSSE", "CSRT"};
-
-// create tracker by name
-Ptr<Tracker> createTrackerByName(const string &trackerType)
+int main()
 {
-    Ptr<Tracker> tracker;
-    if (trackerType ==  trackerTypes[0])
-        tracker = TrackerBoosting::create();
-    else if (trackerType == trackerTypes[1])
-        tracker = TrackerMIL::create();
-    else if (trackerType == trackerTypes[2])
-        tracker = TrackerKCF::create();
-    else if (trackerType == trackerTypes[3])
-        tracker = TrackerTLD::create();
-    else if (trackerType == trackerTypes[4])
-        tracker = TrackerMedianFlow::create();
-    else if (trackerType == trackerTypes[5])
-        tracker = TrackerGOTURN::create();
-    else if (trackerType == trackerTypes[6])
-        tracker = TrackerMOSSE::create();
-    else if (trackerType == trackerTypes[7])
-        tracker = TrackerCSRT::create();
-    else {
-        cout << "Incorrect tracker name" << endl;
-        cout << "Available trackers are: " << endl;
-        for (auto it = trackerTypes.begin() ; it != trackerTypes.end(); ++it)
-            std::cout << " " << *it << endl;
-    }
-    return tracker;
-}
-
-// Fill the vector with random colors
-void getRandomColors(vector<Scalar>& colors, int numColors)
-{
-    RNG rng(0);
-    for(int i=0; i < numColors; i++)
-        colors.push_back(Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255)));
-}
-
-int main() {
-
-    // set default values for tracking algorithm and video
-    string videoPath = "./test.mp4";
-
-    // Initialize MultiTracker with tracking algo
-    vector<Rect> bboxes;
-
-    // create a video capture object to read videos
-    cv::VideoCapture cap(videoPath);
-    Mat frame;
-
-    // quit if unabke to read video file
-    if(!cap.isOpened())
-    {
-        cout << "Error opening video file " << videoPath << endl;
-        return -1;
-    }
-
-    // read first frame
-    cap >> frame;
-
-    // Get bounding boxes for first frame
-    // selectROI's default behaviour is to draw box starting from the center
-    // when fromCenter is set to false, you can draw box starting from top left corner
-    bool showCrosshair = true;
-    bool fromCenter = false;
-    cout << "\n==========================================================\n";
-    cout << "OpenCV says press c to cancel objects selection process" << endl;
-    cout << "It doesn't work. Press Escape to exit selection process" << endl;
-    cout << "\n==========================================================\n";
-    cv::selectROIs("MultiTracker", frame, bboxes, showCrosshair, fromCenter);
-
-    // quit if there are no objects to track
-    if(bboxes.empty())
+    VideoCapture capture("test2.webm");
+    if (!capture.isOpened()){
+        //error in opening the video input
+        cerr << "Unable to open file!" << endl;
         return 0;
-
-    vector<Scalar> colors;
-    getRandomColors(colors, static_cast<int>(bboxes.size()));
-
-
-    // Specify the tracker type
-    string trackerType = "CSRT";
-    // Create multitracker
-    Ptr<MultiTracker> multiTracker = cv::MultiTracker::create();
-
-    // Initialize multitracker
-    for (auto &bboxe : bboxes)
-        multiTracker->add(createTrackerByName(trackerType), frame, Rect2d(bboxe));
-
-    while(cap.isOpened())
-    {
-        // get frame from the video
-        cap >> frame;
-
-        // Stop the program if reached end of video
-        if (frame.empty()) break;
-
-        //Update the tracking result with new frame
-        multiTracker->update(frame);
-
-        // Draw tracked objects
-        for(unsigned i=0; i<multiTracker->getObjects().size(); i++)
-        {
-            rectangle(frame, multiTracker->getObjects()[i], colors[i], 2, 1);
-        }
-
-        // Show frame
-        imshow("MultiTracker", frame);
-
-        // quit on x button
-        if  (waitKey(1) == 27) break;
-
     }
 
+    Mat frame1, prvs;
+    capture >> frame1;
+    cvtColor(frame1, prvs, COLOR_BGR2GRAY);
 
+    while(true){
+        Mat frame2, next;
+        capture >> frame2;
+        if (frame2.empty())
+            break;
+        cvtColor(frame2, next, COLOR_BGR2GRAY);
+
+        Mat flow(prvs.size(), CV_32FC2);
+        calcOpticalFlowFarneback(prvs, next, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+        // visualization
+        Mat flow_parts[2];
+        split(flow, flow_parts);
+        Mat magnitude, angle, magn_norm;
+        cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
+        normalize(magnitude, magn_norm, 0.0f, 1.0f, NORM_MINMAX);
+        angle *= ((1.f / 360.f) * (180.f / 255.f));
+
+        //build hsv image
+        Mat _hsv[3], hsv, hsv8, bgr, gray, binary;
+        _hsv[0] = angle;
+        _hsv[1] = Mat::ones(angle.size(), CV_32F);
+        _hsv[2] = magn_norm;
+        merge(_hsv, 3, hsv);
+        hsv.convertTo(hsv8, CV_8U, 255.0);
+        cvtColor(hsv8, bgr, COLOR_HSV2BGR);
+
+        cvtColor(bgr, gray, COLOR_BGR2GRAY);
+        threshold(gray, binary, 20, 255, THRESH_BINARY);
+
+        imshow("bgr", bgr);
+        imshow("normal video", frame2);
+        imshow("binary", binary);
+        imshow("gray", gray);
+
+        ///////////////////////
+
+//        Mat canny_output, gray;
+//        vector<vector<Point> > contours;
+//        vector<Vec4i> hierarchy;
+//
+//        // bgr to gray scale
+//        cvtColor( bgr, gray, COLOR_BGR2GRAY );
+//
+//        // detect edges using canny
+//        Canny( gray, canny_output, 50, 150, 3 );
+//
+//        // find contours
+//        findContours( canny_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0) );
+//
+//        // get the moments
+//        vector<Moments> mu(contours.size());
+//        for( int i = 0; i<contours.size(); i++ )
+//        { mu[i] = moments( contours[i], false ); }
+//
+//        // get the centroid of figures.
+//        vector<Point2f> mc(contours.size());
+//        for( int i = 0; i<contours.size(); i++)
+//        { mc[i] = Point2f( mu[i].m10/mu[i].m00 , mu[i].m01/mu[i].m00 ); }
+//
+//
+//        // draw contours
+//        Mat drawing(canny_output.size(), CV_8UC3, Scalar(255,255,255));
+//        for( int i = 0; i<contours.size(); i++ )
+//        {
+//            Scalar color = Scalar(167,151,0); // B G R values
+//            drawContours(drawing, contours, i, color, 2, 8, hierarchy, 0, Point());
+//            circle( drawing, mc[i], 4, color, -1, 8, 0 );
+//        }
+//
+//        // show the resultant image
+//        namedWindow( "Contours", WINDOW_AUTOSIZE );
+//        imshow( "Contours", drawing );
+//        waitKey(0);
+
+
+
+        ////////
+        int keyboard = waitKey(1);
+        if (keyboard == 'q' || keyboard == 27)
+            break;
+
+        prvs = next;
+    }
 }
