@@ -1,108 +1,182 @@
-#include <iostream>
-#include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+#include <iostream> // for standard I/O
+#include <string>   // for strings
+#include <iomanip>  // for controlling float print precision
+#include <sstream>  // string to number conversion
+#include <opencv2/core.hpp>     // Basic OpenCV structures (cv::Mat, Scalar)
+#include <opencv2/imgproc.hpp>  // Gaussian Blur
 #include <opencv2/videoio.hpp>
-#include <opencv2/video.hpp>
+#include <opencv2/highgui.hpp>  // OpenCV window I/O
+#include "opencv2/video/tracking.hpp"
 
-using namespace cv;
 using namespace std;
+using namespace cv;
 
-int main()
+
+static void drawHsv(const Mat& flow, Mat& bgr) {
+    //extract x and y channels
+    Mat xy[2]; //X,Y
+    split(flow, xy);
+
+    //calculate angle and magnitude
+    Mat magnitude, angle, hsv;
+    cartToPolar(xy[0], xy[1], magnitude, angle, true);
+
+    //translate magnitude to range [0;1]
+    double mag_max;
+    minMaxLoc(magnitude, 0, &mag_max);
+    magnitude.convertTo(
+            magnitude,    // output matrix
+            -1,           // type of the ouput matrix, if negative same type as input matrix
+            1.0 / mag_max // scaling factor
+    );
+
+
+    //build hsv image
+    Mat _hsv[3];
+    _hsv[0] = angle;
+    _hsv[1] = magnitude;
+    _hsv[2] = cv::Mat::ones(angle.size(), CV_32F);
+
+    merge(_hsv, 3, hsv);
+    //convert to BGR and show
+    cvtColor(hsv, bgr, COLOR_HSV2BGR);
+}
+
+
+static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, double scale, int step, const Scalar& color)
 {
-    VideoCapture capture("test2.webm");
-    if (!capture.isOpened()){
-        //error in opening the video input
-        cerr << "Unable to open file!" << endl;
-        return 0;
+    for (int y = 0; y < cflowmap.rows; y += step)
+        for (int x = 0; x < cflowmap.cols; x += step)
+        {
+            const Point2f& fxy = flow.at<Point2f>(y, x) * scale;
+            line(cflowmap, Point(x, y), Point(cvRound(x + fxy.x), cvRound(y + fxy.y)),
+                 color);
+            circle(cflowmap, Point(x, y), 2, color, -1);
+        }
+}
+
+int main(int argc, char** argv)
+{
+    VideoCapture cap("test2.webm");
+    if (!cap.isOpened())
+    {
+        cout << "Could not open reference " << endl;
+        return -1;
     }
+    Mat flow, cflow, frame, gray, prevgray, img_bgr, img_hsv;
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
 
-    Mat frame1, prvs;
-    capture >> frame1;
-    cvtColor(frame1, prvs, COLOR_BGR2GRAY);
-
-    while(true){
-        Mat frame2, next;
-        capture >> frame2;
-        if (frame2.empty())
-            break;
-        cvtColor(frame2, next, COLOR_BGR2GRAY);
-
-        Mat flow(prvs.size(), CV_32FC2);
-        calcOpticalFlowFarneback(prvs, next, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-
-        // visualization
-        Mat flow_parts[2];
-        split(flow, flow_parts);
-        Mat magnitude, angle, magn_norm;
-        cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
-        normalize(magnitude, magn_norm, 0.0f, 1.0f, NORM_MINMAX);
-        angle *= ((1.f / 360.f) * (180.f / 255.f));
-
-        //build hsv image
-        Mat _hsv[3], hsv, hsv8, bgr, gray, binary;
-        _hsv[0] = angle;
-        _hsv[1] = Mat::ones(angle.size(), CV_32F);
-        _hsv[2] = magn_norm;
-        merge(_hsv, 3, hsv);
-        hsv.convertTo(hsv8, CV_8U, 255.0);
-        cvtColor(hsv8, bgr, COLOR_HSV2BGR);
-
-        cvtColor(bgr, gray, COLOR_BGR2GRAY);
-        threshold(gray, binary, 20, 255, THRESH_BINARY);
-
-        imshow("bgr", bgr);
-        imshow("normal video", frame2);
-        imshow("binary", binary);
-        imshow("gray", gray);
-
-        ///////////////////////
-
-//        Mat canny_output, gray;
-//        vector<vector<Point> > contours;
-//        vector<Vec4i> hierarchy;
-//
-//        // bgr to gray scale
-//        cvtColor( bgr, gray, COLOR_BGR2GRAY );
-//
-//        // detect edges using canny
-//        Canny( gray, canny_output, 50, 150, 3 );
-//
-//        // find contours
-//        findContours( canny_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0) );
-//
-//        // get the moments
-//        vector<Moments> mu(contours.size());
-//        for( int i = 0; i<contours.size(); i++ )
-//        { mu[i] = moments( contours[i], false ); }
-//
-//        // get the centroid of figures.
-//        vector<Point2f> mc(contours.size());
-//        for( int i = 0; i<contours.size(); i++)
-//        { mc[i] = Point2f( mu[i].m10/mu[i].m00 , mu[i].m01/mu[i].m00 ); }
-//
-//
-//        // draw contours
-//        Mat drawing(canny_output.size(), CV_8UC3, Scalar(255,255,255));
-//        for( int i = 0; i<contours.size(); i++ )
-//        {
-//            Scalar color = Scalar(167,151,0); // B G R values
-//            drawContours(drawing, contours, i, color, 2, 8, hierarchy, 0, Point());
-//            circle( drawing, mc[i], 4, color, -1, 8, 0 );
-//        }
-//
-//        // show the resultant image
-//        namedWindow( "Contours", WINDOW_AUTOSIZE );
-//        imshow( "Contours", drawing );
-//        waitKey(0);
+    namedWindow("flow", 1);
 
 
+    for (;;)
+    {
+        Point centro_show = Point(0,0);
+        int lado_show = 0;
 
-        ////////
-        int keyboard = waitKey(1);
-        if (keyboard == 'q' || keyboard == 27)
-            break;
+        for(int i = 0; i < 200 ; i++){
 
-        prvs = next;
+            cap >> frame;
+            cvtColor(frame, gray, COLOR_BGR2GRAY);
+
+            if (!prevgray.empty())
+            {
+                calcOpticalFlowFarneback(prevgray, gray, flow, 0.5, 5, 16, 3, 5, 1.2, OPTFLOW_FARNEBACK_GAUSSIAN);
+                // calculate dense optical flow
+                /*calcOpticalFlowFarneback(
+                    prevgray,
+                    gray,
+                    flow, // computed flow image that has the same size as prev and type CV_32FC2
+                    0.5,  // image scale: < 1 to build pyramids for each image. 0.5 means a
+                          // classical pyramid, where each next layer is twice smalller than the
+                          // previous one
+                    5,    // number of pyramid layers
+                    15,   // averaging windows size. larger values increase the algorithm robustness
+                          // to image noise and give more chances for fast motion detection, but
+                          // yields more blurred motion field
+                    3,    // number of iterations for each pyramid level
+                    5,    // size of the pixel neighborhood used to find the polynomial expansion
+                          // in each pixel
+                    1.1,  // standard deviation of the Gaussian used to smooth derivations
+                    OPTFLOW_FARNEBACK_GAUSSIAN     // flags
+                );*/
+
+                cvtColor(prevgray, cflow, COLOR_GRAY2BGR);
+                drawOptFlowMap(flow, cflow, 1.5, 16, CV_RGB(0, 255, 0));
+                imshow("flow", cflow);
+                drawHsv(flow, img_bgr);
+                Mat gray_bgr = Mat::zeros(frame.rows, frame.cols, CV_8UC1);
+                cvtColor(img_bgr, gray_bgr, COLOR_BGR2GRAY);
+                normalize(gray_bgr, gray_bgr, 0, 255, NORM_MINMAX, CV_8UC1);
+                blur(gray_bgr, gray_bgr, Size(3, 3));
+                imshow("gray", gray_bgr);
+
+                /// Detect edges using Threshold
+                Mat img_thresh = Mat::zeros(frame.rows, frame.cols, CV_8UC1);
+                threshold(gray_bgr, img_thresh, 155, 255, THRESH_BINARY_INV);
+                dilate(img_thresh, img_thresh, 0, Point(-1, -1), 2);
+                imshow("tresh",img_thresh);
+                findContours(img_thresh, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+                Point suma_centros = Point(0,0);
+                int suma_area = 0;
+
+                for (int i = 0; i< contours.size(); i++)
+                {
+
+                    vector<vector<Point> > contours_poly(contours.size());
+                    approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
+                    Rect box = boundingRect(Mat(contours_poly[i]));
+                    if (box.width > 1 && box.height > 1 && box.width < 900 && box.height < 680) {
+                        rectangle(frame,
+                                  box.tl(), box.br(),
+                                  Scalar(0, 255, 0), 4);
+                        std::cout << "Midi ( "  << (box.br() + box.tl())/2 <<  " ) " << std::endl;
+
+                        suma_centros += (box.br() + box.tl())/2;
+                        suma_area += box.area();
+
+//                    rectangle(frame,
+//                              box.tl(), Point(box.tl().x + 50, box.tl().y + 50),
+//                              Scalar(0, 0, 0), 4);
+
+                    }
+
+
+                }
+
+                auto medio_lado = static_cast<int>((suma_area/7 / contours.size()));
+                Point centro = Point(static_cast<int>(suma_centros.x / contours.size()), static_cast<int>(suma_centros.y / contours.size()));
+
+                centro_show += centro;
+                lado_show += medio_lado;
+
+
+                // en la primera iteracion
+                if( i == 0){
+                    rectangle(frame,
+                             Point(centro_show.x - medio_lado, centro.y - medio_lado), Point(centro.x + medio_lado, centro.y + medio_lado),
+                             Scalar(0, 0, 0), 4);
+
+                }
+                else{
+
+
+                    rectangle(frame,
+                              Point((centro_show.x)/i - (lado_show)/i, (centro_show.y)/i - (lado_show)/i), Point((centro_show.x)/i + (lado_show)/i, (centro_show.y)/i + (lado_show)/i),
+                              Scalar(0, 0, 0), 4);
+                }
+
+
+                /// Show in a window
+                namedWindow("Contours", WINDOW_AUTOSIZE);
+                imshow("Contours", frame);
+            }
+            char c = (char)waitKey(5);
+            if (c == 27) break;
+            std::swap(prevgray, gray);
+        }
+
     }
+    return 0;
 }
