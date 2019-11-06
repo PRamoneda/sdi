@@ -94,14 +94,14 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, double scale, int ste
 
 Mat reducirFrame(const Mat &frame){
     Mat newFrame;
-    Size newSize = Size(frame.cols/2, frame.rows/2 );
+    Size newSize = Size(frame.cols/1, frame.rows/1 );
     resize(frame, newFrame, newSize);
     return newFrame;
 }
 
 Mat aumentarFrame(const Mat &frame){
     Mat newFrame;
-    Size newSize = Size(frame.cols*4, frame.rows*4 );
+    Size newSize = Size(frame.cols*1, frame.rows*1 );
     resize(frame, newFrame, newSize);
     return newFrame;
 }
@@ -109,7 +109,7 @@ Mat aumentarFrame(const Mat &frame){
 
 int main(int argc, char** argv)
 {
-    VideoCapture cap("test2.webm");
+    VideoCapture cap("test2.wmv");
     if (!cap.isOpened())
     {
         cout << "Could not open reference " << endl;
@@ -186,7 +186,7 @@ int main(int argc, char** argv)
                     vector<vector<Point> > contours_poly(contours.size());
                     approxPolyDP(Mat(contours[j]), contours_poly[j], 3, true);
                     Rect box = boundingRect(Mat(contours_poly[j]));
-                    if (box.width > 1 && box.height > 1 && box.width < 900 && box.height < 680) {
+                    if (box.width > 5 && box.height > 1 && box.width < 900 && box.height < 680) {
                         rectangle(frame,
                                   box.tl(), box.br(),
                                   Scalar(0, 255, 0), 4);
@@ -225,7 +225,7 @@ int main(int argc, char** argv)
                 namedWindow("Contours", WINDOW_AUTOSIZE);
                 imshow("Contours", aumentarFrame(frame));
             }
-            char c = (char)waitKey(20);
+            char c = (char)waitKey(0);
             if (c == 27) break;
             std::swap(prevgray, gray);
         }
