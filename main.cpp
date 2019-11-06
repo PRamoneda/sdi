@@ -55,6 +55,22 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, double scale, int ste
         }
 }
 
+
+Mat reducirFrame(const Mat &frame){
+    Mat newFrame;
+    Size newSize = Size(frame.cols/2, frame.rows/2 );
+    resize(frame, newFrame, newSize);
+    return newFrame;
+}
+
+Mat aumentarFrame(const Mat &frame){
+    Mat newFrame;
+    Size newSize = Size(frame.cols*4, frame.rows*4 );
+    resize(frame, newFrame, newSize);
+    return newFrame;
+}
+
+
 int main(int argc, char** argv)
 {
     VideoCapture cap("test2.webm");
@@ -75,9 +91,16 @@ int main(int argc, char** argv)
         Point centro_show = Point(0,0);
         int lado_show = 0;
 
-        for(int i = 0; i < 200 ; i++){
+        for(int i = 1; i < 90 ; i++){
+
+            int i_lado = i % 10 + 1;
+            if (i_lado == 1){
+                lado_show = 0;
+            }
 
             cap >> frame;
+            frame = reducirFrame(frame);
+
             cvtColor(frame, gray, COLOR_BGR2GRAY);
 
             if (!prevgray.empty())
@@ -152,27 +175,18 @@ int main(int argc, char** argv)
                 lado_show += medio_lado;
 
 
-                // en la primera iteracion
-                if( i == 0){
-                    rectangle(frame,
-                             Point(centro_show.x - medio_lado, centro.y - medio_lado), Point(centro.x + medio_lado, centro.y + medio_lado),
-                             Scalar(0, 0, 0), 4);
 
-                }
-                else{
+                rectangle(frame,
+                          Point((centro_show.x)/i - (lado_show)/i, (centro_show.y)/i - (lado_show)/i), Point((centro_show.x)/i + (lado_show)/i, (centro_show.y)/i + (lado_show)/i),
+                          Scalar(0, 0, 0), 4);
 
-
-                    rectangle(frame,
-                              Point((centro_show.x)/i - (lado_show)/i, (centro_show.y)/i - (lado_show)/i), Point((centro_show.x)/i + (lado_show)/i, (centro_show.y)/i + (lado_show)/i),
-                              Scalar(0, 0, 0), 4);
-                }
 
 
                 /// Show in a window
                 namedWindow("Contours", WINDOW_AUTOSIZE);
-                imshow("Contours", frame);
+                imshow("Contours", aumentarFrame(frame));
             }
-            char c = (char)waitKey(5);
+            char c = (char)waitKey(20);
             if (c == 27) break;
             std::swap(prevgray, gray);
         }
