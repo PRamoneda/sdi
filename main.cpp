@@ -12,7 +12,7 @@
 #include "ip/UdpSocket.h"
 
 #define ADDRESS_SOUND "127.0.0.1"
-#define PORT_SOUND 7000
+#define PORT_SOUND 7001
 #define ADDRESS_IMAGE "127.0.0.1"
 #define PORT_IMAGE 8000
 
@@ -53,14 +53,14 @@ static void drawHsv(const Mat& flow, Mat& bgr) {
 }
 
 
-
 void send2Sound(int magnitude){
+    magnitude *= 2;
     UdpTransmitSocket transmitSocketSound( IpEndpointName( ADDRESS_SOUND, PORT_SOUND ) );
     char buffer[OUTPUT_BUFFER_SIZE];
     osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
     p << osc::BeginBundleImmediate
       << osc::BeginMessage( "/sound" )
-      << ((magnitude > 1500)? 1: 0) << osc::EndMessage
+      << ((magnitude > 70)? 0: 1) << ((magnitude > 100)? 100: magnitude) << osc::EndMessage
       << osc::EndBundle;
     transmitSocketSound.Send( p.Data(), p.Size() );
 
@@ -68,14 +68,15 @@ void send2Sound(int magnitude){
 }
 
 void send2image(const Point &coor, Mat size){
-    UdpTransmitSocket transmitSocketImage( IpEndpointName( ADDRESS_IMAGE, PORT_IMAGE ) );
-    char buffer[OUTPUT_BUFFER_SIZE];
-    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
-    p << osc::BeginBundleImmediate
-      << osc::BeginMessage( "/image" )
-      << coor.x << coor.y << size.cols << size.rows << osc::EndMessage
-      << osc::EndBundle;
-    transmitSocketImage.Send( p.Data(), p.Size() );
+//    UdpTransmitSocket transmitSocketImage( IpEndpointName( ADDRESS_IMAGE, PORT_IMAGE ) );
+//    char buffer[OUTPUT_BUFFER_SIZE];
+//    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+//    p << osc::BeginBundleImmediate
+//      << osc::BeginMessage( "/image" )
+//      << coor.x << coor.y << size.cols << size.rows << osc::EndMessage
+//      << osc::EndBundle;
+//    transmitSocketImage.Send( p.Data(), p.Size() );
+
     cout << "send2image " << coor <<" [" << size.cols << " ," << size.rows << "] " << endl;
 }
 
@@ -94,14 +95,14 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, double scale, int ste
 
 Mat reducirFrame(const Mat &frame){
     Mat newFrame;
-    Size newSize = Size(frame.cols/1, frame.rows/1 );
+    Size newSize = Size(static_cast<int>(frame.cols * 0.5), static_cast<int>(frame.rows * 0.5));
     resize(frame, newFrame, newSize);
     return newFrame;
 }
 
 Mat aumentarFrame(const Mat &frame){
     Mat newFrame;
-    Size newSize = Size(frame.cols*1, frame.rows*1 );
+    Size newSize = Size(static_cast<int>(frame.cols * 2), static_cast<int>(frame.rows * 2));
     resize(frame, newFrame, newSize);
     return newFrame;
 }
@@ -109,7 +110,7 @@ Mat aumentarFrame(const Mat &frame){
 
 int main(int argc, char** argv)
 {
-    VideoCapture cap("test2.wmv");
+    VideoCapture cap("test2.webm");
     if (!cap.isOpened())
     {
         cout << "Could not open reference " << endl;
@@ -203,7 +204,7 @@ int main(int argc, char** argv)
 
                 }
 
-                auto medio_lado = static_cast<int>((suma_area/7 / contours.size()));
+                auto medio_lado = static_cast<int>((suma_area/10 / contours.size()));
                 Point centro = Point(static_cast<int>(suma_centros.x / contours.size()), static_cast<int>(suma_centros.y / contours.size()));
 
                 centro_show += centro;
@@ -212,7 +213,7 @@ int main(int argc, char** argv)
 
                 // send by OSC
                 send2image(Point((centro_show.x)/i, (centro_show.y)/i), frame);
-                send2Sound(medio_lado*medio_lado);
+                send2Sound(medio_lado);
 
 
                 rectangle(frame,
@@ -225,7 +226,7 @@ int main(int argc, char** argv)
                 namedWindow("Contours", WINDOW_AUTOSIZE);
                 imshow("Contours", aumentarFrame(frame));
             }
-            char c = (char)waitKey(0);
+            char c = (char)waitKey(1);
             if (c == 27) break;
             std::swap(prevgray, gray);
         }
