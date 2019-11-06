@@ -8,10 +8,20 @@
 #include <opencv2/highgui.hpp>  // OpenCV window I/O
 #include "opencv2/video/tracking.hpp"
 
+#include "osc/OscOutboundPacketStream.h"
+#include "ip/UdpSocket.h"
+
+#define ADDRESS_SOUND "127.0.0.1"
+#define PORT_SOUND 7000
+#define ADDRESS_IMAGE "127.0.0.1"
+#define PORT_IMAGE 8000
+
+#define OUTPUT_BUFFER_SIZE 1024
+
 using namespace std;
+
+
 using namespace cv;
-
-
 static void drawHsv(const Mat& flow, Mat& bgr) {
     //extract x and y channels
     Mat xy[2]; //X,Y
@@ -42,6 +52,32 @@ static void drawHsv(const Mat& flow, Mat& bgr) {
     cvtColor(hsv, bgr, COLOR_HSV2BGR);
 }
 
+
+
+void send2Sound(int magnitude){
+    UdpTransmitSocket transmitSocketSound( IpEndpointName( ADDRESS_SOUND, PORT_SOUND ) );
+    char buffer[OUTPUT_BUFFER_SIZE];
+    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+    p << osc::BeginBundleImmediate
+      << osc::BeginMessage( "/sound" )
+      << ((magnitude > 1500)? 1: 0) << osc::EndMessage
+      << osc::EndBundle;
+    transmitSocketSound.Send( p.Data(), p.Size() );
+
+    cout << "send2Sound " << magnitude << endl;
+}
+
+void send2image(const Point &coor, Mat size){
+    UdpTransmitSocket transmitSocketImage( IpEndpointName( ADDRESS_IMAGE, PORT_IMAGE ) );
+    char buffer[OUTPUT_BUFFER_SIZE];
+    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+    p << osc::BeginBundleImmediate
+      << osc::BeginMessage( "/image" )
+      << coor.x << coor.y << size.cols << size.rows << osc::EndMessage
+      << osc::EndBundle;
+    transmitSocketImage.Send( p.Data(), p.Size() );
+    cout << "send2image " << coor <<" [" << size.cols << " ," << size.rows << "] " << endl;
+}
 
 static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, double scale, int step, const Scalar& color)
 {
@@ -93,10 +129,10 @@ int main(int argc, char** argv)
 
         for(int i = 1; i < 90 ; i++){
 
-            int i_lado = i % 10 + 1;
-            if (i_lado == 1){
-                lado_show = 0;
-            }
+//            int i_lado = i % 10 + 1;
+//            if (i_lado == 1){
+//                lado_show = 0;
+//            }
 
             cap >> frame;
             frame = reducirFrame(frame);
@@ -144,17 +180,16 @@ int main(int argc, char** argv)
                 Point suma_centros = Point(0,0);
                 int suma_area = 0;
 
-                for (int i = 0; i< contours.size(); i++)
+                for (int j = 0; j< contours.size(); j++)
                 {
 
                     vector<vector<Point> > contours_poly(contours.size());
-                    approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
-                    Rect box = boundingRect(Mat(contours_poly[i]));
+                    approxPolyDP(Mat(contours[j]), contours_poly[j], 3, true);
+                    Rect box = boundingRect(Mat(contours_poly[j]));
                     if (box.width > 1 && box.height > 1 && box.width < 900 && box.height < 680) {
                         rectangle(frame,
                                   box.tl(), box.br(),
                                   Scalar(0, 255, 0), 4);
-                        std::cout << "Midi ( "  << (box.br() + box.tl())/2 <<  " ) " << std::endl;
 
                         suma_centros += (box.br() + box.tl())/2;
                         suma_area += box.area();
@@ -174,6 +209,10 @@ int main(int argc, char** argv)
                 centro_show += centro;
                 lado_show += medio_lado;
 
+
+                // send by OSC
+                send2image(Point((centro_show.x)/i, (centro_show.y)/i), frame);
+                send2Sound(medio_lado*medio_lado);
 
 
                 rectangle(frame,
